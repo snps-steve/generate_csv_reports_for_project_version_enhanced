@@ -1,6 +1,6 @@
 '''
 Created on Dec 19, 2018
-Updated on Sept 20, 2024
+Updated on Sept 10, 2025
 
 @author: gsnyder
 @contributor: smiths
@@ -144,9 +144,24 @@ def get_vulnerability_details(hub, vulnerability_id):
 def enhance_security_report(hub, zip_content, project_id, project_version_id):
     logging.info(f"Enhancing security report for Project ID: {project_id}, Project Version ID: {project_version_id}")
     
+    # Generate timestamp once outside the loop
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    
     with zipfile.ZipFile(io.BytesIO(zip_content), 'r') as zin:
         csv_files = [f for f in zin.namelist() if f.endswith('.csv')]
-        for csv_file in csv_files:
+        
+        # Filter for security-related CSV files (adjust pattern as needed)
+        security_csv_files = [f for f in csv_files if 'security' in f.lower() or 'vulnerability' in f.lower()]
+        
+        # If no security files found, process all CSV files as fallback
+        if not security_csv_files:
+            security_csv_files = csv_files
+            logging.warning("No security-specific CSV files found. Processing all CSV files.")
+        
+        enhanced_files_created = 0
+        
+        for csv_file in security_csv_files:
+            logging.info(f"Processing CSV file: {csv_file}")
             csv_content = zin.read(csv_file).decode('utf-8')
             reader = csv.DictReader(io.StringIO(csv_content))
             
@@ -163,7 +178,7 @@ def enhance_security_report(hub, zip_content, project_id, project_version_id):
             skipped_components = 0
 
             for index, row in enumerate(reader, 1):
-                print(f"\rProcessing row {index} of {total_rows} ({index/total_rows*100:.2f}%)", end='', flush=True)
+                print(f"\rProcessing {csv_file} - row {index} of {total_rows} ({index/total_rows*100:.2f}%)", end='', flush=True)
                 
                 component_id = row.get('Component id', '')
                 component_version_id = row.get('Version id', '')
@@ -189,19 +204,29 @@ def enhance_security_report(hub, zip_content, project_id, project_version_id):
                 
                 writer.writerow(row)
 
-            print("\nProcessing complete.")
+            print()  # New line after progress
 
-            # Generate a unique filename for the enhanced report
-            timestamp = time.strftime("%Y%m%d-%H%M%S")
-            enhanced_filename = f"enhanced_security_report_{timestamp}.csv"
+            # Create enhanced filename based on original filename
+            base_name = csv_file.replace('.csv', '')
+            enhanced_filename = f"enhanced_{base_name}_{timestamp}.csv"
 
-            # Update zip file with modified CSV
+            # Add enhanced report to zip file
             with zipfile.ZipFile(args.zip_file_name, 'a') as zout:
                 zout.writestr(enhanced_filename, output.getvalue())
+                enhanced_files_created += 1
+                logging.info(f"Created enhanced file: {enhanced_filename}")
 
-    logging.info(f"Enhanced security report saved to {args.zip_file_name}")
-    logging.info(f"Processed components: {processed_components}")
-    logging.info(f"Skipped components: {skipped_components}")
+            logging.info(f"Processed components for {csv_file}: {processed_components}")
+            logging.info(f"Skipped components for {csv_file}: {skipped_components}")
+
+    logging.info(f"Enhanced security report processing complete. Created {enhanced_files_created} enhanced files in {args.zip_file_name}")
+    
+    # List contents of zip file for debugging
+    try:
+        with zipfile.ZipFile(args.zip_file_name, 'r') as zverify:
+            logging.info(f"Final zip file contents: {zverify.namelist()}")
+    except Exception as e:
+        logging.error(f"Could not verify zip file contents: {str(e)}")
 
 def main():
     hub = HubInstance()
@@ -226,6 +251,10 @@ def main():
                 print(f"Valid report types are: {', '.join(valid_reports)}")
                 exit(1)
 
+            # Debug output to verify security report is requested
+            logging.info(f"Reports requested: {reports_l}")
+            logging.info(f"'SECURITY' in reports: {'SECURITY' in reports_l}")
+
             response = hub.create_version_reports(version, reports_l, args.format)
 
             if response.status_code == 201:
@@ -235,6 +264,8 @@ def main():
                 
                 if 'SECURITY' in reports_l:
                     enhance_security_report(hub, zip_content, project_id, project_version_id)
+                else:
+                    logging.info("No SECURITY report requested, skipping enhancement")
             else:
                 print(f"Failed to create reports for project {args.project_name} version {args.version_name}, status code returned {response.status_code}")
         else:
