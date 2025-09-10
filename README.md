@@ -96,7 +96,7 @@ chmod +x generate_csv_reports_for_project_version_enhanced.py
 ### 4. Verify Installation
 Test your setup with our connection verification script:
 ```bash
-python test_bd_connection.py  # Use the test script from earlier conversation
+python test_bd_connection.py  # Use the test script in this repo
 ```
 
 ## Configuration
