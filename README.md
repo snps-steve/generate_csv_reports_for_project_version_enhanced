@@ -60,7 +60,7 @@ When processing security reports, the script automatically adds three critical c
 
 ### Required Python Dependencies
 ```bash
-pip install blackduck
+pip3 install blackduck
 ```
 
 ### BlackDuck Permissions Required
