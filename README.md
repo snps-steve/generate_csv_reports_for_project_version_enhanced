@@ -96,7 +96,7 @@ chmod +x generate_csv_reports_for_project_version_enhanced.py
 ### 4. Verify Installation
 Test your setup with our connection verification script:
 ```bash
-python test_bd_connection.py  # Use the test script "bd_connectivity_test.py" in this repo
+python test_bd_connection.py  # Use the test script from earlier conversation
 ```
 
 ## Configuration
@@ -503,30 +503,26 @@ enhanced-security-scan:
 
 **Solutions**:
 
-- **Verify credentials**:
+- **Test configuration detection**:
   ```bash
-  # Test connection first
-  python test_bd_connection.py
-  
-  # Check environment variables
+  # Use the smart connection test
+  python smart_blackduck_connection_test.py
+  ```
+
+- **Check which configuration method is being used**:
+  ```bash
+  # The script will tell you: "Configuration Method: environment_variables" 
+  # or "Configuration Method: restconfig_file"
+  ```
+
+- **Verify your configuration**:
+  ```bash
+  # For environment variables
   echo $BLACKDUCK_URL
-  echo $BLACKDUCK_API_TOKEN  # Should show token
-  ```
-
-- **Token expiration**:
-  ```bash
-  # Create a new API token in BlackDuck UI
-  # Update your configuration
-  ```
-
-- **URL format issues**:
-  ```bash
-  # ❌ Wrong formats
-  export BLACKDUCK_URL="blackduck-server.com"
-  export BLACKDUCK_URL="https://blackduck-server.com/"
+  echo $BLACKDUCK_API_TOKEN
   
-  # ✅ Correct format
-  export BLACKDUCK_URL="https://blackduck-server.com"
+  # For .restconfig.json
+  cat .restconfig.json  # Check the file contents
   ```
 
 #### 3. SSL Certificate Issues
