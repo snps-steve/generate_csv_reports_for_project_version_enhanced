@@ -84,7 +84,7 @@ cd generate_csv_reports_for_project_version_enhanced/
 
 ### 2. Install Dependencies
 ```bash
-pip install blackduck
+pip3 install blackduck
 ```
 
 ### 3. Make Script Executable (Linux/macOS)
