@@ -15,7 +15,6 @@ An advanced Python script that generates comprehensive CSV reports for BlackDuck
 - [DevSecOps Integration](#devsecops-integration)
 - [Troubleshooting](#troubleshooting)
 - [Best Practices](#best-practices)
-- [API Reference](#api-reference)
 - [Contributing](#contributing)
 
 ## Overview
@@ -57,7 +56,7 @@ When processing security reports, the script automatically adds three critical c
 ### System Requirements
 - Python 3.7 or higher
 - Network access to your BlackDuck instance
-- Appropriate BlackDuck user permissions (see [Configuration](#configuration))
+- Appropriate BlackDuck user permissions
 
 ### Required Python Dependencies
 ```bash
@@ -93,62 +92,73 @@ pip install blackduck
 chmod +x generate_csv_reports_for_project_version_enhanced.py
 ```
 
-### 4. Verify Installation
-Test your setup with our connection verification script:
-```bash
-python test_bd_connection.py  # Use the test script from earlier conversation
-```
-
 ## Configuration
 
-### Method 1: Environment Variables (Recommended for CI/CD)
+### ⚠️ Important: .restconfig.json is Required
 
-This is the most secure and flexible method for production environments:
+The BlackDuck Python library **requires** a `.restconfig.json` file to be present in the directory where you run the script. This is a hard requirement of the `hub-rest-api-python` library.
 
-```bash
-# Required environment variables
-export BLACKDUCK_URL="https://your-blackduck-server.com"
-export BLACKDUCK_API_TOKEN="your-api-token-here"
+### Method 1: Create .restconfig.json Manually (Local Development)
 
-# Optional environment variables
-export BLACKDUCK_TIMEOUT=120
-export BLACKDUCK_TRUST_CERT=true  # For self-signed certificates
-```
-
-### Method 2: Configuration File (Recommended for Local Development)
-
-Create a secure configuration file:
+Create a `.restconfig.json` file in the directory where you'll run the script:
 
 ```bash
-# Create BlackDuck config directory
-mkdir -p ~/.blackduck
-
-# Create configuration file
-cat > ~/.blackduck/config.json << 'EOF'
+# Create the configuration file
+cat > .restconfig.json << 'EOF'
 {
-    "url": "https://your-blackduck-server.com",
+    "baseurl": "https://your-blackduck-server.com",
     "api_token": "your-api-token-here",
     "timeout": 120,
     "trust_cert": true
 }
 EOF
 
-# Secure the configuration file
-chmod 600 ~/.blackduck/config.json
+# Secure the file (important!)
+chmod 600 .restconfig.json
+
+# Add to .gitignore to prevent accidental commits
+echo ".restconfig.json" >> .gitignore
 ```
 
-### Method 3: Direct Script Modification (Not Recommended)
+**⚠️ Security Note**: Never commit `.restconfig.json` to version control as it contains your API token.
 
-For testing only, you can modify the script directly:
+### Method 2: Create .restconfig.json from Environment Variables (CI/CD)
 
-```python
-# Add after the existing hub = HubInstance() line
-hub = HubInstance(
-    baseurl="https://your-blackduck-server.com",
-    api_token="your-api-token-here",
-    timeout=120,
-    trust_cert=True  # Set to True for self-signed certificates
-)
+For automated environments like CI/CD pipelines, you can create the `.restconfig.json` file dynamically from environment variables:
+
+```bash
+#!/bin/bash
+# CI/CD script to create .restconfig.json from environment variables
+
+# Ensure required environment variables are set
+if [[ -z "$BLACKDUCK_URL" || -z "$BLACKDUCK_API_TOKEN" ]]; then
+    echo "❌ Required environment variables not set"
+    echo "Set BLACKDUCK_URL and BLACKDUCK_API_TOKEN"
+    exit 1
+fi
+
+# Create .restconfig.json from environment variables
+cat > .restconfig.json << EOF
+{
+    "baseurl": "${BLACKDUCK_URL}",
+    "api_token": "${BLACKDUCK_API_TOKEN}",
+    "timeout": ${BLACKDUCK_TIMEOUT:-120},
+    "trust_cert": ${BLACKDUCK_TRUST_CERT:-true}
+}
+EOF
+
+# Secure the file
+chmod 600 .restconfig.json
+
+echo "✅ Created .restconfig.json from environment variables"
+```
+
+### Method 3: Using the Setup Helper Script
+
+Use our provided setup script to create `.restconfig.json` interactively:
+
+```bash
+python setup_blackduck_config.py
 ```
 
 ### Creating Your BlackDuck API Token
@@ -161,11 +171,18 @@ hub = HubInstance(
    - Scopes: Select `read` and `write` (for report generation)
    - Expiration: Set according to your security policy
 5. **Copy Token**: ⚠️ **Save immediately** - you won't see it again!
-6. **Test Token**: Use the connection test script to verify
+
+### Testing Your Configuration
+
+Use the connection test script to verify your setup:
+
+```bash
+python test_blackduck_connection.py
+```
 
 ## Usage
 
-### Basic Usage Examples
+### Basic Examples
 
 #### Generate Enhanced Security Report Only
 ```bash
@@ -199,6 +216,18 @@ python generate_csv_reports_for_project_version_enhanced.py \
 #!/bin/bash
 # CI/CD security scanning script
 
+# Create .restconfig.json from environment variables
+cat > .restconfig.json << EOF
+{
+    "baseurl": "${BLACKDUCK_URL}",
+    "api_token": "${BLACKDUCK_API_TOKEN}",
+    "timeout": 120,
+    "trust_cert": true
+}
+EOF
+chmod 600 .restconfig.json
+
+# Generate enhanced security report
 PROJECT_NAME="${CI_PROJECT_NAME}"
 VERSION_NAME="${CI_COMMIT_TAG:-${CI_COMMIT_SHORT_SHA}}"
 OUTPUT_FILE="security_scan_${CI_PIPELINE_ID}.zip"
@@ -207,29 +236,13 @@ python generate_csv_reports_for_project_version_enhanced.py \
   "${PROJECT_NAME}" \
   "${VERSION_NAME}" \
   -r vulnerabilities \
-  -z "${OUTPUT_FILE}" \
-  -t 5 \
-  -s 30
+  -z "${OUTPUT_FILE}"
 
-# Archive results for review
+# Clean up credentials
+rm -f .restconfig.json
+
+# Archive results
 cp "${OUTPUT_FILE}" "${CI_PROJECT_DIR}/artifacts/"
-```
-
-#### Compliance Reporting
-```bash
-#!/bin/bash
-# Monthly compliance report generation
-
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-REPORT_FILE="compliance_report_${TIMESTAMP}.zip"
-
-python generate_csv_reports_for_project_version_enhanced.py \
-  "ProductionApplication" \
-  "release-2024.12" \
-  -r vulnerabilities,license_terms,components \
-  -z "${REPORT_FILE}"
-
-echo "Compliance report generated: ${REPORT_FILE}"
 ```
 
 ## Command Reference
@@ -285,41 +298,6 @@ Component,Version,Vulnerability,Severity,CVSS,File Paths,How to Fix,References a
 "jackson-databind","2.9.8","CVE-2019-12384","HIGH","7.5","src/lib/jackson-databind-2.9.8.jar; pom.xml","Upgrade to version 2.9.9.3 or later to resolve deserialization vulnerability","[{\"rel\":\"cve\",\"href\":\"https://nvd.nist.gov/vuln/detail/CVE-2019-12384\"},{\"rel\":\"advisory\",\"href\":\"https://github.com/advisories/GHSA-...\"}]"
 ```
 
-#### Field Explanations
-
-**File Paths Column**:
-- **Format**: Semicolon-separated list of file paths
-- **Content**: All files where the vulnerable component was detected
-- **Use case**: Immediately locate affected code for impact assessment
-
-**How to Fix Column**:
-- **Format**: Plain text remediation guidance
-- **Content**: Specific steps to resolve the vulnerability
-- **Source**: BlackDuck's vulnerability solution database
-
-**References and Related Links Column**:
-- **Format**: JSON array of reference objects
-- **Content**: Authoritative links to CVE databases, vendor advisories, patches
-- **Structure**: `[{"rel": "type", "href": "url"}]`
-
-### Processing Progress Output
-
-During execution, you'll see detailed progress information:
-
-```
-Successfully created reports (vulnerabilities) for project MyProject and version v1.0.0
-Waiting 30 seconds before attempting to download...
-Attempt 1 of 5 to retrieve report 12345
-Retrieving generated report from https://your-server.com/api/reports/12345
-Successfully downloaded zip file to reports.zip for report 12345
-Processing CSV file: security_20241201-143022.csv
-Processing security_20241201-143022.csv - row 45 of 120 (37.50%)
-Processing complete.
-Created enhanced file: enhanced_security_20241201-143022.csv
-Enhanced security report processing complete. Created 1 enhanced files in reports.zip
-Final zip file contents: ['security_20241201-143022.csv', 'enhanced_security_20241201-143022.csv']
-```
-
 ## DevSecOps Integration
 
 ### Jenkins Pipeline Example
@@ -336,6 +314,19 @@ pipeline {
         stage('Enhanced Security Scan') {
             steps {
                 script {
+                    // Create .restconfig.json from environment variables
+                    sh '''
+                        cat > .restconfig.json << EOF
+{
+    "baseurl": "${BLACKDUCK_URL}",
+    "api_token": "${BLACKDUCK_API_TOKEN}",
+    "timeout": 120,
+    "trust_cert": true
+}
+EOF
+                        chmod 600 .restconfig.json
+                    '''
+                    
                     def reportFile = "security_${env.BUILD_NUMBER}_${env.GIT_COMMIT.take(8)}.zip"
                     
                     sh """
@@ -348,18 +339,15 @@ pipeline {
                     
                     // Archive the enhanced report
                     archiveArtifacts artifacts: "${reportFile}"
-                    
-                    // Optional: Parse and fail build on critical vulnerabilities
-                    sh "python parse_security_report.py ${reportFile} --fail-on-critical"
                 }
             }
-        }
-    }
-    
-    post {
-        always {
-            // Clean up
-            sh 'rm -f *.zip'
+            
+            post {
+                always {
+                    // Clean up credentials
+                    sh 'rm -f .restconfig.json'
+                }
+            }
         }
     }
 }
@@ -391,10 +379,22 @@ jobs:
       run: |
         pip install blackduck
     
-    - name: Generate Enhanced Security Report
+    - name: Create BlackDuck Configuration
       env:
         BLACKDUCK_URL: ${{ secrets.BLACKDUCK_URL }}
         BLACKDUCK_API_TOKEN: ${{ secrets.BLACKDUCK_API_TOKEN }}
+      run: |
+        cat > .restconfig.json << EOF
+        {
+            "baseurl": "${BLACKDUCK_URL}",
+            "api_token": "${BLACKDUCK_API_TOKEN}",
+            "timeout": 120,
+            "trust_cert": true
+        }
+        EOF
+        chmod 600 .restconfig.json
+    
+    - name: Generate Enhanced Security Report
       run: |
         python generate_csv_reports_for_project_version_enhanced.py \
           "${{ github.repository }}" \
@@ -409,93 +409,32 @@ jobs:
         path: security_report_*.zip
         retention-days: 30
     
-    - name: Security Gate Check
-      run: |
-        # Example: Parse report and set exit code based on findings
-        python -c "
-        import zipfile, csv, io, sys
-        with zipfile.ZipFile('security_report_${{ github.sha }}.zip', 'r') as z:
-            for filename in z.namelist():
-                if 'enhanced_' in filename:
-                    with z.open(filename) as f:
-                        reader = csv.DictReader(io.TextIOWrapper(f))
-                        critical_count = sum(1 for row in reader if row.get('Severity') == 'CRITICAL')
-                        print(f'Found {critical_count} critical vulnerabilities')
-                        sys.exit(1 if critical_count > 0 else 0)
-        "
-```
-
-### GitLab CI Integration
-```yaml
-stages:
-  - security-scan
-
-variables:
-  BLACKDUCK_URL: "https://your-blackduck-server.com"
-
-enhanced-security-scan:
-  stage: security-scan
-  image: python:3.9
-  
-  before_script:
-    - pip install blackduck
-  
-  script:
-    - |
-      python generate_csv_reports_for_project_version_enhanced.py \
-        "${CI_PROJECT_NAME}" \
-        "${CI_COMMIT_REF_NAME}" \
-        -r vulnerabilities \
-        -z "security_${CI_PIPELINE_ID}.zip"
-  
-  artifacts:
-    paths:
-      - "security_*.zip"
-    expire_in: 1 week
-    reports:
-      # Optional: Convert to GitLab security format
-      sast: security-report.json
-  
-  variables:
-    BLACKDUCK_API_TOKEN: $BLACKDUCK_API_TOKEN  # Set in CI/CD settings
-  
-  only:
-    - main
-    - develop
-    - merge_requests
+    - name: Clean up credentials
+      if: always()
+      run: rm -f .restconfig.json
 ```
 
 ## Troubleshooting
 
-### Common Issues and Solutions
+### Common Issues
 
-#### 1. No Enhanced Files Generated
+#### 1. No .restconfig.json File Found
 
-**Symptoms**: Original reports are created but no `enhanced_*` files appear in the zip
+**Symptoms**: `[Errno 2] No such file or directory: '.restconfig.json'`
 
-**Possible Causes & Solutions**:
+**Solution**: The BlackDuck library requires this file. Create it:
 
-- **Not requesting security reports**:
-  ```bash
-  # ❌ Wrong - no security report requested
-  python script.py "Project" "Version" -r components
-  
-  # ✅ Correct - security report requested
-  python script.py "Project" "Version" -r vulnerabilities
-  ```
-
-- **Missing API permissions**:
-  ```bash
-  # Check your token permissions in BlackDuck UI
-  # Ensure you have access to "matched files" and "vulnerability details" APIs
-  ```
-
-- **API endpoint errors**:
-  ```bash
-  # Enable debug logging to see API calls
-  export BLACKDUCK_LOG_LEVEL=DEBUG
-  python script.py ...
-  ```
+```bash
+cat > .restconfig.json << 'EOF'
+{
+    "baseurl": "https://your-blackduck-server.com",
+    "api_token": "your-api-token-here",
+    "timeout": 120,
+    "trust_cert": true
+}
+EOF
+chmod 600 .restconfig.json
+```
 
 #### 2. Authentication Failures
 
@@ -503,26 +442,19 @@ enhanced-security-scan:
 
 **Solutions**:
 
-- **Test configuration detection**:
+- **Check .restconfig.json format**:
   ```bash
-  # Use the smart connection test
-  python smart_blackduck_connection_test.py
+  cat .restconfig.json | python -m json.tool  # Validate JSON
   ```
 
-- **Check which configuration method is being used**:
+- **Verify your API token**:
   ```bash
-  # The script will tell you: "Configuration Method: environment_variables" 
-  # or "Configuration Method: restconfig_file"
+  # Check token in BlackDuck UI - ensure it hasn't expired
   ```
 
-- **Verify your configuration**:
+- **Test connection**:
   ```bash
-  # For environment variables
-  echo $BLACKDUCK_URL
-  echo $BLACKDUCK_API_TOKEN
-  
-  # For .restconfig.json
-  cat .restconfig.json  # Check the file contents
+  python test_blackduck_connection.py
   ```
 
 #### 3. SSL Certificate Issues
@@ -531,61 +463,26 @@ enhanced-security-scan:
 
 **Solutions**:
 
-- **For self-signed certificates**:
-  ```bash
-  export BLACKDUCK_TRUST_CERT=true
+- **For self-signed certificates**, update `.restconfig.json`:
+  ```json
+  {
+      "baseurl": "https://34.211.43.204",
+      "api_token": "your-token",
+      "timeout": 120,
+      "trust_cert": true
+  }
   ```
 
-- **For development environments only**:
-  ```bash
-  export PYTHONHTTPSVERIFY=0
-  # Warning: This disables SSL verification entirely
-  ```
+- **For IP addresses** (like `https://34.211.43.204`), always set `"trust_cert": true`
 
-#### 4. "File Paths" Column Shows "No file paths available"
-
-**Symptoms**: Enhanced report created but file paths are mostly empty
-
-**Possible Causes**:
-
-- **Scan type limitations**: Some scan types (like package manager scans) don't map to specific files
-- **Component detection method**: Binary/signature detection may not have file-level mapping
-- **API permissions**: Missing access to matched files endpoint
-
-**Solutions**:
-- Verify your scan includes source code analysis
-- Check component detection settings in BlackDuck
-- Ensure API token has appropriate permissions
-
-#### 5. Report Download Timeouts
-
-**Symptoms**: Script fails with timeout errors during report generation
-
-**Solutions**:
-
-- **Increase timeout and retries**:
-  ```bash
-  python script.py "Project" "Version" -t 10 -s 60
-  ```
-
-- **Run during off-peak hours**: Large projects may take longer to process
-
-- **Split report generation**:
-  ```bash
-  # Generate reports separately for large projects
-  python script.py "Project" "Version" -r vulnerabilities
-  python script.py "Project" "Version" -r components
-  ```
-
-#### 6. Project or Version Not Found
+#### 4. Project or Version Not Found
 
 **Symptoms**: "Did not find project" or "Did not find version" messages
 
 **Solutions**:
 
-- **Check exact naming** (case-sensitive):
+- **List available projects**:
   ```bash
-  # List available projects first
   python -c "
   from blackduck.HubRestApi import HubInstance
   hub = HubInstance()
@@ -598,153 +495,75 @@ enhanced-security-scan:
   "
   ```
 
-- **Use exact names from BlackDuck UI**
-- **Check for special characters or encoding issues**
-
-### Debug Mode
-
-Enable comprehensive debugging:
-
-```python
-# Add to the top of the script after imports
-import logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="[%(asctime)s] {%(module)s:%(lineno)d} %(levelname)s - %(message)s"
-)
-```
-
-### Verify Output
-
-Always verify your results:
-
-```bash
-# Check zip contents
-unzip -l reports.zip
-
-# Quick CSV inspection
-unzip -p reports.zip enhanced_*.csv | head -n 5
-
-# Count vulnerabilities by severity
-unzip -p reports.zip enhanced_*.csv | \
-  csvcut -c Severity | \
-  sort | uniq -c
-```
+- **Use exact names** from BlackDuck UI (case-sensitive)
 
 ## Best Practices
 
+### Configuration Security
+
+1. **Never commit .restconfig.json** to version control
+   ```bash
+   echo ".restconfig.json" >> .gitignore
+   ```
+
+2. **Set restrictive file permissions**
+   ```bash
+   chmod 600 .restconfig.json
+   ```
+
+3. **Clean up in CI/CD pipelines**
+   ```bash
+   # Always remove .restconfig.json after use
+   rm -f .restconfig.json
+   ```
+
 ### For Development Teams
 
-1. **Prioritize by File Impact**:
-   - Focus on vulnerabilities in files you actively modify
-   - Use file paths to assess blast radius
-
-2. **Follow Remediation Guidance**:
-   - Always check the "How to Fix" column before manual research
-   - Verify fixes against the provided reference links
-
-3. **Integrate into IDE Workflows**:
+1. **Local Development Setup**:
    ```bash
-   # Create IDE-friendly output
-   python script.py "MyProject" "main" -r vulnerabilities
-   csvcut -c "Component,Vulnerability,Severity,File Paths,How to Fix" \
-     enhanced_*.csv > ide_import.csv
+   # Create .restconfig.json once for local development
+   # Keep it secure and don't commit it
    ```
 
-### For Security Teams
-
-1. **Automate Regular Scans**:
-   ```bash
-   # Weekly security posture report
-   #!/bin/bash
-   for project in "WebApp" "MobileApp" "API"; do
-       python script.py "$project" "main" -r vulnerabilities \
-         -z "weekly_${project}_$(date +%Y%m%d).zip"
-   done
-   ```
-
-2. **Track Remediation Progress**:
-   - Compare reports across versions
-   - Monitor "How to Fix" completion rates
-   - Use reference links for vulnerability research
-
-3. **Integration with Security Tools**:
-   ```python
-   # Example: Convert to SARIF format for security platforms
-   import json, csv
-   
-   def convert_to_sarif(enhanced_csv_path):
-       # Implementation to convert enhanced CSV to SARIF format
-       # for integration with GitHub Security, Azure DevOps, etc.
-       pass
-   ```
+2. **Team Coordination**:
+   - Share setup instructions, not credentials
+   - Each developer should have their own API token
+   - Use project-specific .gitignore rules
 
 ### For DevSecOps Teams
 
-1. **Pipeline Integration**:
-   - Fail builds on critical vulnerabilities
-   - Archive enhanced reports for compliance
-   - Generate trend reports over time
+1. **CI/CD Integration**:
+   - Store credentials in CI/CD secrets
+   - Create .restconfig.json dynamically in pipelines
+   - Always clean up credentials after use
 
-2. **Metrics and KPIs**:
+2. **Automation**:
    ```bash
-   # Extract metrics from enhanced reports
-   python -c "
-   import csv, sys
-   with open('enhanced_security.csv', 'r') as f:
-       reader = csv.DictReader(f)
-       by_severity = {}
-       for row in reader:
-           severity = row['Severity']
-           by_severity[severity] = by_severity.get(severity, 0) + 1
-   print('Security Metrics:', by_severity)
-   "
+   # Example automation script
+   #!/bin/bash
+   setup_blackduck() {
+       cat > .restconfig.json << EOF
+   {
+       "baseurl": "${BLACKDUCK_URL}",
+       "api_token": "${BLACKDUCK_API_TOKEN}",
+       "timeout": 120,
+       "trust_cert": true
+   }
+   EOF
+       chmod 600 .restconfig.json
+   }
+   
+   cleanup_blackduck() {
+       rm -f .restconfig.json
+   }
+   
+   # Use trap to ensure cleanup happens
+   trap cleanup_blackduck EXIT
+   setup_blackduck
+   
+   # Your script execution here
+   python generate_csv_reports_for_project_version_enhanced.py ...
    ```
-
-3. **Compliance Reporting**:
-   ```bash
-   # Monthly compliance bundle
-   python script.py "ProdApp" "v2024.12" \
-     -r vulnerabilities,license_terms,components \
-     -z "compliance_$(date +%Y%m).zip"
-   ```
-
-## API Reference
-
-### BlackDuck APIs Used
-
-The enhanced script leverages these BlackDuck REST APIs:
-
-1. **Project Management APIs**:
-   - `GET /api/projects` - List projects
-   - `GET /api/projects/{id}/versions` - List versions
-
-2. **Report Generation APIs**:
-   - `POST /api/projects/{id}/versions/{versionId}/reports` - Create reports
-   - `GET /api/reports/{reportId}` - Download reports
-
-3. **Enhancement APIs** (added by this script):
-   - `GET /api/projects/{projectId}/versions/{versionId}/components/{componentId}/versions/{componentVersionId}/origins/{originId}/matched-files` - Get file paths
-   - `GET /api/vulnerabilities/{vulnerabilityId}` - Get vulnerability details
-
-### Rate Limiting and Performance
-
-The script implements several performance optimizations:
-
-- **Retry logic**: Configurable retry attempts with exponential backoff
-- **Progress tracking**: Real-time progress display for large reports
-- **Efficient API usage**: Batches requests where possible
-- **Memory management**: Streams large CSV files instead of loading entirely into memory
-
-### Error Handling
-
-Comprehensive error handling covers:
-
-- Network connectivity issues
-- Authentication failures
-- API rate limiting
-- Malformed data responses
-- File system permissions
 
 ## Contributing
 
@@ -755,9 +574,9 @@ Comprehensive error handling covers:
    git clone https://your-repo/blackduck-enhanced-reports.git
    cd blackduck-enhanced-reports
    
-   # Create virtual environment
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   # Create .restconfig.json for development
+   cp .restconfig.json.example .restconfig.json
+   # Edit with your credentials
    
    # Install dependencies
    pip install blackduck pytest
@@ -772,18 +591,11 @@ Comprehensive error handling covers:
 
 When modifying this script:
 
-1. **Maintain backward compatibility** with existing report formats
+1. **Maintain .restconfig.json compatibility** - this is a hard requirement
 2. **Add comprehensive error handling** for new API calls
 3. **Update this README** with any new features or breaking changes
 4. **Test with various BlackDuck configurations** and project sizes
 5. **Follow security best practices** for credential handling
-
-### Submitting Changes
-
-1. Test your changes with multiple BlackDuck instances
-2. Update documentation and examples
-3. Ensure all tests pass
-4. Submit pull request with detailed description
 
 ## Support and Resources
 
@@ -796,16 +608,22 @@ When modifying this script:
 
 For issues related to:
 
-- **BlackDuck API or platform issues**: Contact BlackDuck support or check their documentation
+- **BlackDuck API or platform issues**: Contact BlackDuck support
 - **Script functionality or bugs**: Create an issue in this repository with:
   - Complete error messages and logs
-  - BlackDuck version and configuration details
+  - Your .restconfig.json structure (with credentials redacted)
   - Steps to reproduce the issue
-- **Enhanced features or feature requests**: Open a feature request with your use case and requirements
+- **Configuration help**: Use our connection test script: `python test_blackduck_connection.py`
 
 ### Changelog
 
-**Version 2.0** (Current):
+**Version 2.1** (Current):
+- ✅ Updated to properly work with .restconfig.json requirement
+- ✅ Simplified configuration approach
+- ✅ Enhanced CI/CD integration examples
+- ✅ Improved security guidance
+
+**Version 2.0**:
 - ✅ Fixed filename collision bug in enhanced report generation
 - ✅ Added comprehensive file path mapping
 - ✅ Improved error handling and logging
