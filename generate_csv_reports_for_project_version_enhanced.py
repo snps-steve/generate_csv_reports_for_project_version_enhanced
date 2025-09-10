@@ -1,6 +1,6 @@
 '''
 Created on Dec 19, 2018
-Updated on Sept 10, 2025
+Updated on Sept 20, 2024
 
 @author: gsnyder
 @contributor: smiths
@@ -110,32 +110,63 @@ def check_restconfig_file():
         exit(1)
 
 def create_hub_instance():
-    """Create BlackDuck Hub instance - requires .restconfig.json file"""
+    """Create BlackDuck Hub instance - requires .restconfig.json file with SSL handling"""
     
     # Verify .restconfig.json exists and is valid
     check_restconfig_file()
     
     try:
-        # The BlackDuck library will automatically read .restconfig.json
+        # Try standard approach first
         hub = HubInstance()
-        logging.info("Successfully created BlackDuck Hub instance")
+        logging.info("Successfully created BlackDuck Hub instance using .restconfig.json")
         return hub
     
     except Exception as e:
         error_msg = str(e)
+        
+        # If we get an 'insecure' error, try explicit SSL bypass
+        if 'insecure' in error_msg.lower():
+            logging.warning("Standard connection failed with 'insecure' error, trying explicit SSL bypass")
+            try:
+                # Read .restconfig.json to get credentials for explicit connection
+                with open('.restconfig.json', 'r') as f:
+                    config = json.load(f)
+                
+                # Create hub instance with explicit SSL bypass
+                hub = HubInstance(
+                    baseurl=config['baseurl'],
+                    api_token=config['api_token'],
+                    timeout=config.get('timeout', 120),
+                    trust_cert=True,
+                    verify=False  # Explicitly disable SSL verification
+                )
+                logging.info("Successfully created BlackDuck Hub instance with SSL bypass")
+                return hub
+                
+            except Exception as ssl_error:
+                logging.error(f"SSL bypass attempt also failed: {ssl_error}")
+        
+        # If both attempts failed, provide guidance
         print(f"\n❌ Failed to connect to BlackDuck: {error_msg}")
         
         # Provide specific guidance based on error type
-        if 'unauthorized' in error_msg.lower() or '401' in error_msg:
+        if 'insecure' in error_msg.lower():
+            print("\n💡 SSL 'insecure' error:")
+            print("   This is common with IP addresses and self-signed certificates")
+            print("   Try adding 'verify': false to your .restconfig.json:")
+            print('   {')
+            print('     "baseurl": "https://34.211.43.204",')
+            print('     "api_token": "your-token",')
+            print('     "timeout": 120,')
+            print('     "trust_cert": true,')
+            print('     "verify": false')
+            print('   }')
+        
+        elif 'unauthorized' in error_msg.lower() or '401' in error_msg:
             print("\n💡 Authentication issue:")
             print("   - Check your API token in .restconfig.json")
             print("   - Ensure the token hasn't expired")
             print("   - Verify token has appropriate permissions")
-        
-        elif 'ssl' in error_msg.lower() or 'certificate' in error_msg.lower():
-            print("\n💡 SSL certificate issue:")
-            print("   - For self-signed certificates, set 'trust_cert': true")
-            print("   - For IP addresses, always use 'trust_cert': true")
         
         elif 'timeout' in error_msg.lower() or 'connection' in error_msg.lower():
             print("\n💡 Network issue:")
@@ -368,4 +399,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
