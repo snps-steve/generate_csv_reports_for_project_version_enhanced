@@ -1,12 +1,17 @@
 '''
 Created on Dec 19, 2018
-Updated on Sept 10, 2025
+Updated on Sept 20, 2024
 
 @author: gsnyder
 @contributor: smiths
 
 Generate a CSV report for a given project-version and enhance with "File Paths", "How to Fix", and 
 "References and Related Links"
+
+Requirements:
+- The BlackDuck hub-rest-api-python library requires a .restconfig.json file
+- This file must be present in the directory where you run this script
+- See README.md for setup instructions
 '''
 
 import argparse
@@ -17,8 +22,12 @@ import logging
 import os
 import time
 import zipfile
+import urllib3
 from blackduck.HubRestApi import HubInstance
 from requests.exceptions import MissingSchema
+
+# Disable SSL warnings for self-signed certificates
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -54,7 +63,92 @@ parser.add_argument('-s', '--sleep_time', default=30, type=int, help="The amount
 
 args = parser.parse_args()
 
-hub = HubInstance()
+def check_restconfig_file():
+    """Check if .restconfig.json exists and is valid - required by BlackDuck library"""
+    
+    if not os.path.exists('.restconfig.json'):
+        print("\n❌ .restconfig.json file not found!")
+        print("\n🔧 The BlackDuck Python library requires a .restconfig.json file.")
+        print("   This file must be present in the directory where you run this script.")
+        print("\n📄 Create .restconfig.json with your BlackDuck credentials:")
+        print('   {')
+        print('     "baseurl": "https://your-blackduck-server.com",')
+        print('     "api_token": "your-api-token-here",')
+        print('     "timeout": 120,')
+        print('     "trust_cert": true')
+        print('   }')
+        print("\n🔒 Secure the file:")
+        print("   chmod 600 .restconfig.json")
+        print("\n📚 For detailed setup instructions, see README.md")
+        print("💡 Or run: python test_blackduck_connection.py")
+        exit(1)
+    
+    try:
+        with open('.restconfig.json', 'r') as f:
+            config = json.load(f)
+        
+        # Check required fields
+        required_fields = ['baseurl', 'api_token']
+        missing_fields = [field for field in required_fields if field not in config]
+        
+        if missing_fields:
+            print(f"\n❌ .restconfig.json missing required fields: {missing_fields}")
+            print("   Required fields: baseurl, api_token")
+            print("   See README.md for correct format")
+            exit(1)
+        
+        logging.info("✅ .restconfig.json file found and valid")
+        return True
+        
+    except json.JSONDecodeError:
+        print("\n❌ .restconfig.json contains invalid JSON")
+        print("   Check the file format - it must be valid JSON")
+        print("   See README.md for correct format")
+        exit(1)
+    except Exception as e:
+        print(f"\n❌ Error reading .restconfig.json: {e}")
+        exit(1)
+
+def create_hub_instance():
+    """Create BlackDuck Hub instance - requires .restconfig.json file"""
+    
+    # Verify .restconfig.json exists and is valid
+    check_restconfig_file()
+    
+    try:
+        # The BlackDuck library will automatically read .restconfig.json
+        hub = HubInstance()
+        logging.info("Successfully created BlackDuck Hub instance")
+        return hub
+    
+    except Exception as e:
+        error_msg = str(e)
+        print(f"\n❌ Failed to connect to BlackDuck: {error_msg}")
+        
+        # Provide specific guidance based on error type
+        if 'unauthorized' in error_msg.lower() or '401' in error_msg:
+            print("\n💡 Authentication issue:")
+            print("   - Check your API token in .restconfig.json")
+            print("   - Ensure the token hasn't expired")
+            print("   - Verify token has appropriate permissions")
+        
+        elif 'ssl' in error_msg.lower() or 'certificate' in error_msg.lower():
+            print("\n💡 SSL certificate issue:")
+            print("   - For self-signed certificates, set 'trust_cert': true")
+            print("   - For IP addresses, always use 'trust_cert': true")
+        
+        elif 'timeout' in error_msg.lower() or 'connection' in error_msg.lower():
+            print("\n💡 Network issue:")
+            print("   - Verify the server URL is accessible")
+            print("   - Check firewall/network connectivity")
+            print("   - Try increasing timeout in .restconfig.json")
+        
+        print("\n🔧 Test your connection:")
+        print("   python test_blackduck_connection.py")
+        exit(1)
+
+# Create hub instance
+hub = create_hub_instance()
 
 class FailedReportDownload(Exception):
     pass
@@ -230,8 +324,6 @@ def enhance_security_report(hub, zip_content, project_id, project_version_id):
         logging.error(f"Could not verify zip file contents: {str(e)}")
 
 def main():
-    hub = HubInstance()
-
     project = hub.get_project_by_name(args.project_name)
 
     if project:
@@ -276,4 +368,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
