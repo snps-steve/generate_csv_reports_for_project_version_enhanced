@@ -75,11 +75,11 @@ Your BlackDuck user account needs:
 ### 1. Download the Script
 ```bash
 # Option A: Direct download
-wget https://your-repo/generate_csv_reports_for_project_version_enhanced.py
+wget https://github.com/snps-steve/generate_csv_reports_for_project_version_enhanced/
 
 # Option B: Clone the repository
-git clone https://your-repo/blackduck-enhanced-reports.git
-cd blackduck-enhanced-reports
+git clone https://github.com/snps-steve/generate_csv_reports_for_project_version_enhanced/
+cd generate_csv_reports_for_project_version_enhanced/
 ```
 
 ### 2. Install Dependencies
