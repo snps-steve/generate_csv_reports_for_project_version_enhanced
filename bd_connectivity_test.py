@@ -1,347 +1,209 @@
 #!/usr/bin/env python3
 """
-BlackDuck Connection Test Script - Fixed Version
-Tests connectivity and lists available projects with comprehensive SSL handling
-
-Usage:
-    python bd_connectivity_test.py
-
-Environment Variables Required:
-    BLACKDUCK_URL - Your BlackDuck server URL
-    BLACKDUCK_API_TOKEN - Your API token
-
-Optional Environment Variables:
-    BLACKDUCK_TRUST_CERT - Set to 'true' for self-signed certificates
-    BLACKDUCK_TIMEOUT - Connection timeout in seconds (default: 120)
+Smart BlackDuck Connection Handler
+Implements intelligent fallback for configuration methods:
+1. .restconfig.json file (if exists)
+2. Environment variables (if available)
+3. Helpful error messages if neither works
 """
 
 import os
 import sys
+import json
 import urllib3
-import re
+import logging
 from blackduck.HubRestApi import HubInstance
 
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-def normalize_url(url):
-    """Normalize BlackDuck URL by removing trailing slashes and ensuring proper format"""
-    if not url:
-        return url
+def create_smart_hub_instance():
+    """
+    Create BlackDuck Hub instance using intelligent configuration detection.
+    Priority order:
+    1. .restconfig.json file (if exists)
+    2. Environment variables (if available)
+    3. Error with helpful guidance
+    """
     
-    # Remove trailing slash if present
-    url = url.rstrip('/')
+    config_method = None
+    config_source = None
     
-    # Ensure it starts with http:// or https://
-    if not url.startswith(('http://', 'https://')):
-        url = f'https://{url}'
+    # Method 1: Check for .restconfig.json file first
+    if os.path.exists('.restconfig.json'):
+        try:
+            logging.info("Found .restconfig.json file, attempting to use it")
+            with open('.restconfig.json', 'r') as f:
+                config = json.load(f)
+            
+            # Validate required fields
+            if 'baseurl' in config and 'api_token' in config:
+                config_method = "restconfig_file"
+                config_source = ".restconfig.json"
+                logging.info("Using .restconfig.json for BlackDuck configuration")
+                
+                # Let HubInstance() pick up the .restconfig.json automatically
+                return HubInstance(), config_method, config_source
+            else:
+                logging.warning(".restconfig.json exists but missing required fields (baseurl, api_token)")
+        
+        except json.JSONDecodeError:
+            logging.warning(".restconfig.json exists but contains invalid JSON")
+        except Exception as e:
+            logging.warning(f"Found .restconfig.json but couldn't read it: {e}")
     
-    return url
+    # Method 2: Check for environment variables
+    blackduck_url = os.getenv('BLACKDUCK_URL')
+    blackduck_token = os.getenv('BLACKDUCK_API_TOKEN')
+    
+    if blackduck_url and blackduck_token:
+        config_method = "environment_variables"
+        config_source = "Environment variables (BLACKDUCK_URL, BLACKDUCK_API_TOKEN)"
+        logging.info("Using environment variables for BlackDuck configuration")
+        
+        try:
+            # Create hub instance with environment variables
+            hub = HubInstance(
+                baseurl=blackduck_url.rstrip('/'),  # Remove trailing slash
+                api_token=blackduck_token,
+                timeout=int(os.getenv('BLACKDUCK_TIMEOUT', 120)),
+                trust_cert=os.getenv('BLACKDUCK_TRUST_CERT', 'true').lower() == 'true',
+                verify=False  # Disable SSL verification for self-signed certs
+            )
+            return hub, config_method, config_source
+        
+        except Exception as e:
+            logging.error(f"Failed to create hub instance with environment variables: {e}")
+            # Fall through to error handling
+    
+    # Method 3: Try default HubInstance() as last resort
+    try:
+        logging.info("Attempting default BlackDuck configuration")
+        hub = HubInstance()
+        config_method = "default_config"
+        config_source = "Default HubInstance() configuration"
+        return hub, config_method, config_source
+    except Exception as e:
+        logging.error(f"Default configuration failed: {e}")
+    
+    # If all methods fail, provide comprehensive error message
+    print("\n❌ Could not establish BlackDuck connection!")
+    print("\n🔍 Configuration Detection Results:")
+    
+    # Check what we found
+    if os.path.exists('.restconfig.json'):
+        print("   📁 .restconfig.json: Found but invalid/incomplete")
+    else:
+        print("   📁 .restconfig.json: Not found")
+    
+    if blackduck_url:
+        print(f"   🌐 BLACKDUCK_URL: Found ({blackduck_url})")
+    else:
+        print("   🌐 BLACKDUCK_URL: Not set")
+    
+    if blackduck_token:
+        print("   🔑 BLACKDUCK_API_TOKEN: Found (hidden)")
+    else:
+        print("   🔑 BLACKDUCK_API_TOKEN: Not set")
+    
+    print("\n🔧 Configuration Options (choose one):")
+    print("\n📄 Option 1: .restconfig.json file (in current directory)")
+    print("   Create .restconfig.json with:")
+    print('   {')
+    print('     "baseurl": "https://your-blackduck-server.com",')
+    print('     "api_token": "your-api-token-here",')
+    print('     "timeout": 120,')
+    print('     "trust_cert": true')
+    print('   }')
+    
+    print("\n🌍 Option 2: Environment variables (recommended)")
+    print("   Add to ~/.bashrc:")
+    print('   export BLACKDUCK_URL="https://your-blackduck-server.com"')
+    print('   export BLACKDUCK_API_TOKEN="your-api-token-here"')
+    print('   export BLACKDUCK_TRUST_CERT=true')
+    print('   export BLACKDUCK_TIMEOUT=120')
+    print("   Then run: source ~/.bashrc")
+    
+    print("\n📚 See README.md for detailed configuration instructions")
+    
+    sys.exit(1)
 
-def is_ip_address(hostname):
-    """Check if hostname is an IP address"""
-    ip_pattern = re.compile(r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
-    return bool(ip_pattern.match(hostname))
-
-def test_blackduck_connection():
-    """Test connection to BlackDuck and list basic info"""
+def test_smart_connection():
+    """Test the smart connection with detailed feedback"""
+    
+    print("🚀 Smart BlackDuck Connection Test\n")
     
     try:
-        # Get configuration from environment
-        blackduck_url = normalize_url(os.getenv('BLACKDUCK_URL'))
-        blackduck_token = os.getenv('BLACKDUCK_API_TOKEN')
-        blackduck_timeout = int(os.getenv('BLACKDUCK_TIMEOUT', 120))
-        trust_cert = os.getenv('BLACKDUCK_TRUST_CERT', 'true').lower() == 'true'
+        # Use smart connection method
+        hub, config_method, config_source = create_smart_hub_instance()
         
-        if not blackduck_url or not blackduck_token:
-            print("❌ Missing required environment variables!")
-            return False
+        print(f"✅ Configuration Method: {config_method}")
+        print(f"📋 Configuration Source: {config_source}")
         
-        print("🔗 Connecting to BlackDuck...")
-        print(f"   Server: {blackduck_url}")
-        print(f"   Trust cert: {trust_cert}")
-        print(f"   Timeout: {blackduck_timeout}s")
+        # Test connection
+        print(f"\n🔗 Connected to: {hub.get_urlbase()}")
         
-        # Check if using IP address (common source of SSL issues)
-        hostname = blackduck_url.split('//')[1].split(':')[0] if '//' in blackduck_url else blackduck_url
-        if is_ip_address(hostname):
-            print(f"   ℹ️  Using IP address ({hostname}) - SSL trust enabled automatically")
-            trust_cert = True
+        # Test authentication
+        user = hub.get_current_user()
+        username = user.get('userName', 'Unknown')
+        print(f"👤 Authenticated as: {username}")
         
-        # Try multiple connection methods in order of preference
-        connection_methods = [
-            {
-                'name': 'Secure Connection with SSL Trust',
-                'params': {
-                    'baseurl': blackduck_url,
-                    'api_token': blackduck_token,
-                    'timeout': blackduck_timeout,
-                    'trust_cert': True,
-                    'verify': False  # Disable SSL verification for self-signed certs
-                }
-            },
-            {
-                'name': 'Standard Connection with Trust Cert',
-                'params': {
-                    'baseurl': blackduck_url,
-                    'api_token': blackduck_token,
-                    'timeout': blackduck_timeout,
-                    'trust_cert': trust_cert
-                }
-            },
-            {
-                'name': 'Basic Connection',
-                'params': {
-                    'baseurl': blackduck_url,
-                    'api_token': blackduck_token,
-                    'timeout': blackduck_timeout
-                }
-            },
-            {
-                'name': 'Environment Variables Only',
-                'params': {}  # Let HubInstance() read from environment
-            }
-        ]
+        # Test project access
+        projects = hub.get_projects(limit=5)
+        project_count = projects.get('totalCount', 0)
+        print(f"📂 Found {project_count} accessible projects")
         
-        for method in connection_methods:
-            try:
-                print(f"\n   Trying: {method['name']}...")
-                
-                if method['params']:
-                    hub = HubInstance(**method['params'])
-                else:
-                    hub = HubInstance()
-                
-                # Test basic connectivity by getting server info
-                server_info = hub.get_urlbase()
-                print(f"   ✅ Connected to: {server_info}")
-                
-                # Get current user info to verify authentication
-                current_user = hub.get_current_user()
-                username = current_user.get('userName', 'Unknown')
-                user_type = current_user.get('type', 'Unknown')
-                print(f"   👤 Authenticated as: {username} (Type: {user_type})")
-                
-                # Test API access by listing projects
-                print("\n📂 Testing project access...")
-                try:
-                    projects = hub.get_projects(limit=10)
-                    total_projects = projects.get('totalCount', 0)
-                    
-                    if total_projects > 0:
-                        print(f"✅ Found {total_projects} projects accessible to your account")
-                        
-                        # Show sample projects
-                        sample_count = min(3, len(projects.get('items', [])))
-                        if sample_count > 0:
-                            print("   Sample projects:")
-                            for project in projects['items'][:sample_count]:
-                                project_name = project.get('name', 'Unknown')
-                                print(f"   • {project_name}")
-                            
-                            if total_projects > sample_count:
-                                print(f"   ... and {total_projects - sample_count} more")
-                    else:
-                        print("⚠️  No projects found")
-                        print("   This could mean:")
-                        print("   - You have no projects assigned to your account")
-                        print("   - Limited read permissions")
-                        print("   - This is a new BlackDuck instance")
-                
-                except Exception as e:
-                    print(f"⚠️  Project access test failed: {str(e)}")
-                    print("   Authentication successful, but limited API access")
-                
-                # Test report generation capability
-                print("\n📊 Testing report generation access...")
-                try:
-                    # This is a simple test - we're not actually generating a report
-                    # Just checking if we can access the projects for report generation
-                    print("✅ Report generation API access appears to be available")
-                except Exception as e:
-                    print(f"⚠️  Report generation test inconclusive: {str(e)}")
-                
-                print(f"\n🎉 Connection successful using: {method['name']}")
-                print("\n🔧 Connection Details:")
-                print(f"   Method: {method['name']}")
-                print(f"   URL: {blackduck_url}")
-                print(f"   User: {username}")
-                print(f"   Projects: {total_projects}")
-                
-                return True
-                
-            except Exception as e:
-                error_msg = str(e)
-                print(f"   ❌ Failed: {error_msg}")
-                
-                # Provide specific guidance based on error type
-                if 'insecure' in error_msg.lower():
-                    print("      💡 SSL certificate issue - try setting BLACKDUCK_TRUST_CERT=true")
-                elif 'unauthorized' in error_msg.lower() or '401' in error_msg:
-                    print("      💡 Authentication failed - check your API token")
-                elif 'timeout' in error_msg.lower():
-                    print("      💡 Connection timeout - check server URL and network")
-                elif 'connection' in error_msg.lower():
-                    print("      💡 Network issue - verify server is accessible")
-                
-                continue
+        if project_count > 0:
+            print("   Sample projects:")
+            for project in projects.get('items', [])[:3]:
+                print(f"   • {project['name']}")
         
-        print("\n❌ All connection methods failed")
+        print(f"\n🎉 Connection successful using: {config_method}")
+        
+        # Show configuration recommendations
+        if config_method == "restconfig_file":
+            print("\n💡 Using .restconfig.json file")
+            print("   ✅ This works great for local development")
+            print("   ⚠️  Remember to keep this file secure and don't commit it to git")
+        
+        elif config_method == "environment_variables":
+            print("\n💡 Using environment variables")
+            print("   ✅ This is the recommended approach for production and CI/CD")
+            print("   ✅ More secure than config files")
+        
+        return True
+        
+    except SystemExit:
+        # This is our controlled exit from create_smart_hub_instance()
         return False
-        
     except Exception as e:
         print(f"❌ Unexpected error: {str(e)}")
         return False
 
-def check_environment():
-    """Check if required environment variables are set and provide detailed feedback"""
+# Usage example for your enhanced script
+def get_configured_hub():
+    """
+    Get a configured BlackDuck hub instance for use in your enhanced script.
+    This is the function you'd call in your main enhanced script.
+    """
     
-    print("🔍 Checking environment configuration...")
-    
-    # Required variables
-    required_vars = {
-        'BLACKDUCK_URL': os.getenv('BLACKDUCK_URL'),
-        'BLACKDUCK_API_TOKEN': os.getenv('BLACKDUCK_API_TOKEN')
-    }
-    
-    # Optional variables
-    optional_vars = {
-        'BLACKDUCK_TIMEOUT': os.getenv('BLACKDUCK_TIMEOUT'),
-        'BLACKDUCK_TRUST_CERT': os.getenv('BLACKDUCK_TRUST_CERT')
-    }
-    
-    missing_vars = []
-    
-    # Check required variables
-    for var, value in required_vars.items():
-        if value:
-            if 'TOKEN' in var:
-                print(f"✅ {var}: {'*' * min(len(value), 20)} (hidden)")
-            else:
-                normalized_url = normalize_url(value)
-                print(f"✅ {var}: {normalized_url}")
-                if normalized_url != value:
-                    print(f"   ℹ️  Normalized from: {value}")
-        else:
-            missing_vars.append(var)
-            print(f"❌ {var}: Not set")
-    
-    # Check optional variables
-    for var, value in optional_vars.items():
-        if value:
-            print(f"ℹ️  {var}: {value}")
-        else:
-            if var == 'BLACKDUCK_TRUST_CERT':
-                print(f"ℹ️  {var}: Not set (will use 'true' for IP addresses)")
-            elif var == 'BLACKDUCK_TIMEOUT':
-                print(f"ℹ️  {var}: Not set (using default: 120)")
-    
-    if missing_vars:
-        print(f"\n⚠️  Missing required variables: {', '.join(missing_vars)}")
-        print("\n🔧 Add these to your ~/.bashrc:")
-        for var in missing_vars:
-            if var == 'BLACKDUCK_URL':
-                print(f'export {var}="https://your-blackduck-server.com"')
-            elif var == 'BLACKDUCK_API_TOKEN':
-                print(f'export {var}="your-api-token-here"')
-        print("\nThen run: source ~/.bashrc")
-        return False
-    
-    return True
-
-def check_ssl_configuration():
-    """Analyze SSL configuration and provide recommendations"""
-    
-    blackduck_url = os.getenv('BLACKDUCK_URL', '')
-    normalized_url = normalize_url(blackduck_url)
-    
-    print("\n🔒 SSL Configuration Analysis...")
-    
-    if not normalized_url:
-        print("❌ No URL configured")
-        return
-    
-    # Extract hostname from URL
     try:
-        hostname = normalized_url.split('//')[1].split(':')[0]
-    except (IndexError, AttributeError):
-        hostname = normalized_url
+        hub, config_method, config_source = create_smart_hub_instance()
+        logging.info(f"BlackDuck configured using: {config_method}")
+        return hub
     
-    # Check URL format
-    if normalized_url.startswith('http://'):
-        print("⚠️  Using HTTP (insecure) - consider using HTTPS")
-    elif normalized_url.startswith('https://'):
-        print("✅ Using HTTPS (secure)")
-    
-    # Check if using IP address
-    if is_ip_address(hostname):
-        print(f"⚠️  Using IP address ({hostname}) instead of domain name")
-        print("   This typically indicates a self-signed certificate")
-        print("   SSL trust will be automatically enabled")
-    else:
-        print(f"✅ Using domain name ({hostname})")
-    
-    # Check SSL trust environment variable
-    trust_cert = os.getenv('BLACKDUCK_TRUST_CERT')
-    if trust_cert:
-        print(f"ℹ️  SSL trust setting: {trust_cert}")
-    else:
-        print("ℹ️  SSL trust setting: Not configured (will auto-detect)")
-    
-    # Provide recommendations
-    print("\n💡 SSL Recommendations:")
-    if is_ip_address(hostname) or not trust_cert:
-        print("   Add to ~/.bashrc for self-signed certificates:")
-        print("   export BLACKDUCK_TRUST_CERT=true")
-    print("   For production, use proper domain names with valid certificates")
-
-def show_next_steps():
-    """Show what to do after successful connection"""
-    
-    print("\n🚀 Next Steps:")
-    print("1. Your BlackDuck connection is working correctly!")
-    print("2. You can now run the enhanced CSV reports script:")
-    print("   python generate_csv_reports_for_project_version_enhanced.py \\")
-    print('     "YourProjectName" "YourVersionName" -r vulnerabilities')
-    print("\n3. To find your project and version names, check the BlackDuck UI or run:")
-    print("   python -c \"")
-    print("from blackduck.HubRestApi import HubInstance")
-    print("hub = HubInstance()")
-    print("projects = hub.get_projects(limit=10)")
-    print("for p in projects['items']:")
-    print("    print(f'Project: {p[\\\"name\\\"]}')\"")
-
-def main():
-    """Main function - orchestrates the connection test"""
-    
-    print("🚀 BlackDuck Connection Test - Fixed Version\n")
-    
-    # Step 1: Check environment configuration
-    if not check_environment():
-        print("\n❌ Environment configuration incomplete.")
-        print("Please set the required environment variables and try again.")
-        sys.exit(1)
-    
-    # Step 2: Analyze SSL configuration
-    check_ssl_configuration()
-    
-    print()  # Add space before connection test
-    
-    # Step 3: Test actual connection
-    if test_blackduck_connection():
-        print("\n✅ BlackDuck connection test PASSED!")
-        show_next_steps()
-        sys.exit(0)
-    else:
-        print("\n❌ BlackDuck connection test FAILED.")
-        print("\n🔧 Troubleshooting Guide:")
-        print("1. Verify your BLACKDUCK_URL is accessible in a web browser")
-        print("2. Check that your BLACKDUCK_API_TOKEN is valid and not expired")
-        print("3. Ensure your account has appropriate permissions")
-        print("4. For self-signed certificates, set BLACKDUCK_TRUST_CERT=true")
-        print("5. Check network connectivity and firewall settings")
-        print("\n📚 For more help, see the README.md file")
-        sys.exit(1)
+    except SystemExit:
+        # Configuration failed - error message already shown
+        raise Exception("BlackDuck configuration failed")
 
 if __name__ == "__main__":
-    main()
+    # Test the smart connection
+    success = test_smart_connection()
+    
+    if success:
+        print("\n🚀 Ready to run enhanced reports script!")
+        print("   Your BlackDuck configuration is working correctly")
+        sys.exit(0)
+    else:
+        print("\n❌ Please configure BlackDuck and try again")
+        sys.exit(1)
