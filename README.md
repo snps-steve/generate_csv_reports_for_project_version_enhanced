@@ -155,10 +155,14 @@ echo "✅ Created .restconfig.json from environment variables"
 
 ### Method 3: Using the Setup Helper Script
 
-Use our provided setup script to create `.restconfig.json` interactively:
+Use the hub-rest-api-python provided setup script to create `.restconfig.json` interactively.
 
+1. Either download/clone the entire repository (https://github.com/blackducksoftware/hub-rest-api-python/blob/master/generate_config.py)
+2. Modify generate_config.py. Add the missing shebang: #!/usr/bin/env python3. Next, substitute your credentials.  
+3. Run it:
+   
 ```bash
-python setup_blackduck_config.py
+python generate_config.py
 ```
 
 ### Creating Your BlackDuck API Token
