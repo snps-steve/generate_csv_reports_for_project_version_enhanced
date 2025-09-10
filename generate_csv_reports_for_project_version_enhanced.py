@@ -64,18 +64,18 @@ parser.add_argument('-s', '--sleep_time', default=30, type=int, help="The amount
 args = parser.parse_args()
 
 def check_restconfig_file():
-    """Check if .restconfig.json exists and is valid - required by BlackDuck library"""
+    """Check if .restconfig.json exists and has the correct BlackDuck library format"""
     
     if not os.path.exists('.restconfig.json'):
         print("\n❌ .restconfig.json file not found!")
         print("\n🔧 The BlackDuck Python library requires a .restconfig.json file.")
         print("   This file must be present in the directory where you run this script.")
-        print("\n📄 Create .restconfig.json with your BlackDuck credentials:")
+        print("\n📄 Create .restconfig.json with the correct format:")
         print('   {')
         print('     "baseurl": "https://your-blackduck-server.com",')
         print('     "api_token": "your-api-token-here",')
-        print('     "timeout": 120,')
-        print('     "trust_cert": true')
+        print('     "insecure": true,')
+        print('     "debug": false')
         print('   }')
         print("\n🔒 Secure the file:")
         print("   chmod 600 .restconfig.json")
@@ -95,6 +95,19 @@ def check_restconfig_file():
             print(f"\n❌ .restconfig.json missing required fields: {missing_fields}")
             print("   Required fields: baseurl, api_token")
             print("   See README.md for correct format")
+            exit(1)
+        
+        # Check for incorrect SSL parameters (common mistakes)
+        if 'trust_cert' in config:
+            print("\n⚠️  Found 'trust_cert' in .restconfig.json")
+            print("   The BlackDuck library uses 'insecure': true instead")
+            print("   Update your .restconfig.json format")
+            exit(1)
+        
+        if 'verify' in config:
+            print("\n⚠️  Found 'verify' in .restconfig.json")
+            print("   The BlackDuck library uses 'insecure': true instead")
+            print("   Update your .restconfig.json format")
             exit(1)
         
         logging.info("✅ .restconfig.json file found and valid")
