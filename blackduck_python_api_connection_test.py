@@ -5,10 +5,10 @@ Tests connectivity using .restconfig.json (required by hub-rest-api-python libra
 
 This script helps you:
 1. Work with the hub-rest-api-python library to test connectivity (see: https://github.com/blackducksoftware/hub-rest-api-python)
-1. Check if .restconfig.json exists and is valid
-2. Test BlackDuck Server connectivity
-3. Create .restconfig.json from environment variables if needed
-4. Verify your setup before running the enhanced reports script
+2. Check if .restconfig.json exists and is valid
+3. Test BlackDuck Server connectivity
+4. Create .restconfig.json from environment variables if needed
+5. Verify your setup before running the enhanced reports script
 
 Usage:
     python test_blackduck_connection.py
@@ -65,53 +65,85 @@ def check_restconfig_file():
         return False, None
 
 def test_blackduck_connection(config):
-    """Test BlackDuck connection using .restconfig.json"""
+    """Test BlackDuck connection using .restconfig.json with enhanced SSL handling"""
     
     print("\n🔗 Testing BlackDuck connection...")
     
     try:
         from blackduck.HubRestApi import HubInstance
         
-        # Create hub instance (will automatically read .restconfig.json)
-        hub = HubInstance()
+        # For IP addresses or self-signed certificates, we need to be more explicit
+        baseurl = config.get('baseurl', '')
+        if any(char.isdigit() for char in baseurl.split('//')[1].split(':')[0] if '//' in baseurl):
+            print("   ℹ️  Detected IP address - applying SSL workarounds")
         
-        # Test connection
-        server_url = hub.get_urlbase()
-        print(f"✅ Connected to: {server_url}")
+        # Try multiple connection approaches
+        connection_attempts = [
+            {
+                'name': 'Standard .restconfig.json',
+                'method': lambda: HubInstance()
+            },
+            {
+                'name': 'Explicit SSL bypass',
+                'method': lambda: HubInstance(
+                    baseurl=config['baseurl'],
+                    api_token=config['api_token'],
+                    timeout=config.get('timeout', 120),
+                    trust_cert=True,
+                    verify=False
+                )
+            }
+        ]
         
-        # Test authentication
-        user = hub.get_current_user()
-        username = user.get('userName', 'Unknown')
-        user_type = user.get('type', 'Unknown')
-        print(f"👤 Authenticated as: {username} ({user_type})")
-        
-        # Test project access
-        print("\n📂 Testing project access...")
-        projects = hub.get_projects(limit=5)
-        project_count = projects.get('totalCount', 0)
-        
-        if project_count > 0:
-            print(f"✅ Found {project_count} accessible projects")
-            
-            # Show sample projects
-            sample_count = min(3, len(projects.get('items', [])))
-            if sample_count > 0:
-                print("   Sample projects:")
-                for project in projects['items'][:sample_count]:
-                    project_name = project.get('name', 'Unknown')
-                    print(f"   • {project_name}")
+        for attempt in connection_attempts:
+            try:
+                print(f"   Trying: {attempt['name']}...")
+                hub = attempt['method']()
                 
-                if project_count > sample_count:
-                    print(f"   ... and {project_count - sample_count} more")
-        else:
-            print("⚠️  No projects found")
-            print("   This could mean:")
-            print("   - You have no projects assigned to your account")
-            print("   - Limited read permissions")
-            print("   - This is a new BlackDuck instance")
+                # Test connection
+                server_url = hub.get_urlbase()
+                print(f"✅ Connected to: {server_url}")
+                
+                # Test authentication
+                user = hub.get_current_user()
+                username = user.get('userName', 'Unknown')
+                user_type = user.get('type', 'Unknown')
+                print(f"👤 Authenticated as: {username} ({user_type})")
+                
+                # Test project access
+                print("\n📂 Testing project access...")
+                projects = hub.get_projects(limit=5)
+                project_count = projects.get('totalCount', 0)
+                
+                if project_count > 0:
+                    print(f"✅ Found {project_count} accessible projects")
+                    
+                    # Show sample projects
+                    sample_count = min(3, len(projects.get('items', [])))
+                    if sample_count > 0:
+                        print("   Sample projects:")
+                        for project in projects['items'][:sample_count]:
+                            project_name = project.get('name', 'Unknown')
+                            print(f"   • {project_name}")
+                        
+                        if project_count > sample_count:
+                            print(f"   ... and {project_count - sample_count} more")
+                else:
+                    print("⚠️  No projects found")
+                    print("   This could mean:")
+                    print("   - You have no projects assigned to your account")
+                    print("   - Limited read permissions")
+                    print("   - This is a new BlackDuck instance")
+                
+                print(f"\n🎉 Connection successful using: {attempt['name']}")
+                return True
+                
+            except Exception as attempt_error:
+                print(f"   ❌ {attempt['name']} failed: {attempt_error}")
+                continue
         
-        print(f"\n🎉 Connection test successful!")
-        return True
+        print("\n❌ All connection attempts failed")
+        return False
         
     except ImportError:
         print("❌ BlackDuck library not installed")
@@ -119,19 +151,26 @@ def test_blackduck_connection(config):
         return False
     except Exception as e:
         error_msg = str(e)
-        print(f"❌ Connection failed: {error_msg}")
+        print(f"❌ Unexpected error: {error_msg}")
         
         # Provide specific guidance based on error type
-        if 'unauthorized' in error_msg.lower() or '401' in error_msg:
+        if 'insecure' in error_msg.lower():
+            print("\n💡 SSL 'insecure' error with IP address:")
+            print("   This is a known issue with IP addresses and self-signed certificates")
+            print("   Try updating your .restconfig.json:")
+            print('   {')
+            print('     "baseurl": "https://34.211.43.204",')
+            print('     "api_token": "your-token",')
+            print('     "timeout": 120,')
+            print('     "trust_cert": true,')
+            print('     "verify": false')
+            print('   }')
+        
+        elif 'unauthorized' in error_msg.lower() or '401' in error_msg:
             print("\n💡 Authentication issue:")
             print("   - Check your API token in BlackDuck UI")
             print("   - Ensure the token hasn't expired")
             print("   - Verify token has appropriate permissions")
-        
-        elif 'ssl' in error_msg.lower() or 'certificate' in error_msg.lower():
-            print("\n💡 SSL certificate issue:")
-            print("   - For self-signed certificates, set 'trust_cert': true in .restconfig.json")
-            print("   - For IP addresses, always use 'trust_cert': true")
         
         elif 'timeout' in error_msg.lower() or 'connection' in error_msg.lower():
             print("\n💡 Network issue:")
