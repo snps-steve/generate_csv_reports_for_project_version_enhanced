@@ -40,6 +40,63 @@ chmod +x generate_csv_reports_for_project_version_enhanced.py
 
 ## Basic Usage
 
+### Credentials
+
+## Method #1: Exports
+
+# Required
+export BLACKDUCK_URL="https://your-blackduck-server.com"
+export BLACKDUCK_API_TOKEN="your-api-token-here"
+
+# Optional
+export BLACKDUCK_TIMEOUT=120
+export BLACKDUCK_TRUST_CERT=true  # For self-signed certificates
+
+## Method #2: Config File 
+Create a configuration file at ~/.blackduck/config.json:
+{
+    "url": "https://your-blackduck-server.com",
+    "api_token": "your-api-token-here",
+    "timeout": 120,
+    "trust_cert": true
+}
+
+## Method #3: Embed Creds into Script (not recommended)
+# Option A: Using environment variables (current approach)
+from blackduck.HubRestApi import HubInstance
+hub = HubInstance()  # Automatically reads from env vars or config file
+
+# Option B: Direct configuration
+from blackduck.HubRestApi import HubInstance
+hub = HubInstance(
+    baseurl="https://your-blackduck-server.com",
+    api_token="your-api-token-here",
+    timeout=120,
+    trust_cert=True  # Set to True for self-signed certificates
+)
+
+# Option C: Using username/password (less secure, not recommended)
+from blackduck.HubRestApi import HubInstance
+hub = HubInstance(
+    baseurl="https://your-blackduck-server.com",
+    username="your-username",
+    password="your-password",
+    timeout=120,
+    trust_cert=True
+)
+
+# Option D: Configuration with SSL verification disabled (development only)
+from blackduck.HubRestApi import HubInstance
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+hub = HubInstance(
+    baseurl="https://your-blackduck-server.com",
+    api_token="your-api-token-here",
+    verify=False,  # Disables SSL verification - use only for testing
+    timeout=120
+)
+
 ### Generate All Reports (with Security Enhancement)
 ```bash
 python generate_csv_reports_for_project_version_enhanced.py "MyProject" "v1.0.0"
