@@ -314,14 +314,14 @@ pipeline {
         stage('Enhanced Security Scan') {
             steps {
                 script {
-                    // Create .restconfig.json from environment variables
+                    // Create .restconfig.json with correct BlackDuck library format
                     sh '''
                         cat > .restconfig.json << EOF
 {
-    "baseurl": "${BLACKDUCK_URL}",
-    "api_token": "${BLACKDUCK_API_TOKEN}",
-    "timeout": 120,
-    "trust_cert": true
+  "baseurl": "${BLACKDUCK_URL}",
+  "api_token": "${BLACKDUCK_API_TOKEN}",
+  "insecure": true,
+  "debug": false
 }
 EOF
                         chmod 600 .restconfig.json
@@ -386,10 +386,10 @@ jobs:
       run: |
         cat > .restconfig.json << EOF
         {
-            "baseurl": "${BLACKDUCK_URL}",
-            "api_token": "${BLACKDUCK_API_TOKEN}",
-            "timeout": 120,
-            "trust_cert": true
+          "baseurl": "${BLACKDUCK_URL}",
+          "api_token": "${BLACKDUCK_API_TOKEN}",
+          "insecure": true,
+          "debug": false
         }
         EOF
         chmod 600 .restconfig.json
